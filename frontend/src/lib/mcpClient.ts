@@ -6,7 +6,10 @@
  * - MCP Apps extension metadata discovery (_meta.ui.resourceUri)
  */
 
+import { JSONRPC_VERSION } from "@modelcontextprotocol/sdk/types.js";
+
 export const MCP_PROTOCOL_VERSION = "2025-11-25";
+export const MCP_JSONRPC_VERSION = JSONRPC_VERSION || "2.0";
 
 export interface MCPToolMetaUI {
   resourceUri?: string;
@@ -169,7 +172,7 @@ export class EchoCartMCPClient {
     if (!rpcResp) {
       try {
         rpcResp = JSON.parse(rawText);
-      } catch (err) {
+      } catch {
         throw new Error(`Failed to parse MCP response as JSON or SSE stream: ${rawText.substring(0, 150)}`);
       }
     }
@@ -213,7 +216,7 @@ export class EchoCartMCPClient {
       // Send initialized notification
       try {
         await this.postRpc("notifications/initialized", {});
-      } catch (e) {
+      } catch {
         // Notification fire-and-forget
       }
 

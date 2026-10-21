@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  EchoCart Nexus MCP Server - AWS Serverless Deployment via AWS Lambda Web Adapter
+  Adhering to Streamable HTTP MCP Specification (2025-11-25) with response streaming.
+
+Parameters:
+  AllowedOrigins:
+    Type: String
+    Default: "*"
+    Description: Comma-separated list of allowed CORS origins for MCP client connections.
+  LogLevel:
+    Type: String
+    Default: "INFO"
+    AllowedValues: ["DEBUG", "INFO", "WARNING", "ERROR"]
+    Description: Application logging verbosity level.
+
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 1024
+    Tracing: Active
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # FastMCP Container Function on AWS Lambda
+  # ---------------------------------------------------------------------------
+  EchoCartMcpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: echocart-nexus-mcp
+      PackageType: Image
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          PORT: "8080"
+          AWS_LWA_PORT: "8080"
+          AWS_LWA_INVOKE_MODE: "response_stream"
+          AWS_LWA_READINESS_CHECK_PATH: "/health"
+          ALLOWED_ORIGINS: !Ref AllowedOrigins
+          LOG_LEVEL: !Ref LogLevel
+      # Lambda Function URL configured for Response Streaming & CORS
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: RESPONSE_STREAM
+        Cors:
+          AllowOrigins:
+            - !Ref AllowedOrigins
+          AllowMethods:
+            - POST
+            - GET
+            - OPTIONS
+            - DELETE
+          AllowHeaders:
+            - Content-Type
+            - MCP-Protocol-Version
+            - Mcp-Method
+            - Mcp-Name
+            - Mcp-Session-Id
+            - Authorization
+            - Accept
+          ExposeHeaders:
+            - MCP-Protocol-Version
+            - Mcp-Method
+            - Mcp-Name
+            - Mcp-Session-Id
+            - Content-Security-Policy
+          MaxAge: 86400
+    Metadata:
+      DockerTag: latest
+      DockerContext: ../../backend
+      Dockerfile: Dockerfile
+
+  # ---------------------------------------------------------------------------
+  # CloudWatch Log Group with 14-Day Retention
+  # ---------------------------------------------------------------------------
+  EchoCartLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${EchoCartMcpFunction}"
+      RetentionInDays: 14
+
+Outputs:
+  McpFunctionUrl:
+    Description: "Public Streamable HTTP MCP Server Endpoint (Function URL)"
+    Value: !GetAtt EchoCartMcpFunctionUrl.FunctionUrl
+  HealthEndpoint:
+    Description: "Readiness & Health Check URL"
+    Value: !Sub "${EchoCartMcpFunctionUrl.FunctionUrl}health"
+  McpPostEndpoint:
+    Description: "Core MCP Streamable HTTP JSON-RPC URL"
+    Value: !Sub "${EchoCartMcpFunctionUrl.FunctionUrl}mcp"

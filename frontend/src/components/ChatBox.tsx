@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Mic, Volume2, VolumeX, Sparkles, Wrench, Clock, CheckCircle2 } from "lucide-react";
+import { Send, Mic, Volume2, VolumeX, Sparkles, Wrench, CheckCircle2 } from "lucide-react";
 import { AgentExecutionStep } from "@/lib/agentEngine";
 
 interface ChatBoxProps {
