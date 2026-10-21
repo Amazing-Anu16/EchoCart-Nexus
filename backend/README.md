@@ -39,11 +39,83 @@ Production-grade, self-hosted **Model Context Protocol (MCP)** server adhering t
 
 ---
 
-## 3. Local Execution & Testing
+## 3. MCP Apps Extension (`@modelcontextprotocol/ext-apps`)
 
-### Running the Test Suite
+EchoCart Nexus implements the **MCP Apps Extension** specification, equipping MCP tools with interactive UI cards rendered inside sandboxed `<iframe>` elements for simulated **Alexa+ Smart Displays** (e.g. Echo Show 10/15).
+
+### UI Metadata Binding
+Tools declare a pointer to their companion UI templates in their metadata:
+- **`manage_cart`** ➔ `_meta.ui.resourceUri`: `ui://echocart/cart-view.html`
+- **`search_catalog`** ➔ `_meta.ui.resourceUri`: `ui://echocart/product-carousel.html`
+
+Both `tools/list` and `tools/call` responses bundle `_meta.ui.resourceUri` so UI-enabled clients can automatically mount the sandboxed views.
+
+### UI Templates & Sandboxed Resources
+Templates are served as MCP resources with:
+- **URI Scheme**: `ui://echocart/<template-name>.html`
+- **MIME Type**: `text/html;profile=mcp-app`
+- **Content Security Policy (CSP)**: Declared in `_meta.ui.csp` and enforced via `<meta http-equiv="Content-Security-Policy">` and HTTP headers:
+  ```text
+  default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'none'; frame-ancestors *;
+  ```
+
+| Template | File | Endpoint | Features |
+| :--- | :--- | :--- | :--- |
+| **Cart Summary Card** | `backend/templates/cart-view.html` | `/mcp-apps/cart-view.html` | Responsive touch-friendly cart summary, vector thumbnails, itemized subtotal/tax/shipping, and touch stepper buttons (`+` / `-`). |
+| **Product Carousel** | `backend/templates/product-carousel.html` | `/mcp-apps/product-carousel.html` | Horizontal touch slider with scroll-snapping, category filters, ratings, badges, and "Add to Cart" button. |
+| **Alexa+ Display Simulator** | `backend/templates/alexa-simulator.html` | `/mcp-apps` or `/mcp-apps/alexa-simulator.html` | Hardware bezel simulator (Echo Show) hosting sandboxed iframes with live PostMessage event logger. |
+
+### Bidirectional PostMessage Bridge
+Communication between the guest UI iframe and the host client conforms strictly to JSON-RPC 2.0 over `window.postMessage`:
+1. **Handshake**: The guest view emits `ui/initialize` on mount:
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": "init-1",
+     "method": "ui/initialize",
+     "params": {
+       "appInfo": { "name": "EchoCart-Cart-View", "version": "1.0.0" },
+       "appCapabilities": { "tools": { "call": true } },
+       "protocolVersion": "2025-11-25"
+     }
+   }
+   ```
+2. **State Reception**: The host sends initial data or updates using `ui/tool-result`:
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "method": "ui/tool-result",
+     "params": { "cart": { "items": [...], "total_items": 2, "total_price": 379.98 } }
+   }
+   ```
+3. **Tool Invocation**: Tapping stepper buttons (`+` / `-`) or "Add to Cart" emits `tools/call` back to the host:
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": "call-1",
+     "method": "tools/call",
+     "params": {
+       "name": "manage_cart",
+       "arguments": { "action": "update", "sku": "ECHO-PRO-01", "quantity": 2, "user_token": "usr_token_alpha" }
+     }
+   }
+   ```
+
+### Progressive Enhancement
+For screenless or headless interactions (e.g. smart speakers without screens or voice-only mode), all MCP tool execution results include companion natural-language voice summaries in `content[1]`. Headless clients read the textual speech response, while screen-enabled clients render the interactive MCP App.
+
+
+---
+
+## 4. Local Execution & Testing
+
+### Running the Complete Test Suite
 ```bash
-python -m pytest backend/test_server.py -v
+# Run both wire protocol and MCP Apps extension test suites
+python -m pytest backend/ -v
+
+# Run MCP Apps extension tests specifically
+python -m pytest backend/test_mcp_apps.py -v
 ```
 
 ### Starting the Server Locally
@@ -51,9 +123,12 @@ python -m pytest backend/test_server.py -v
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8080
 ```
 
+### Opening the Simulated Alexa+ Display
+Navigate to `http://localhost:8080/mcp-apps` to view the interactive Echo Show simulator running the sandboxed MCP Apps iframe.
+
 ---
 
-## 4. Curl & Wire Verification Recipes
+## 5. Curl & Wire Verification Recipes
 
 ### 1. Protocol Ping
 ```bash
@@ -179,7 +254,7 @@ curl -i -X POST http://localhost:8080/mcp \
 
 ---
 
-## 5. Docker & AWS Lambda Deployment
+## 6. Docker & AWS Lambda Deployment
 
 ### Build Container Image
 ```bash

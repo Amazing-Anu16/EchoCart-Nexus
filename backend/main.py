@@ -12,11 +12,34 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import mcp.types as types
 from fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+
+try:
+    from backend.mcp_apps import (
+        CART_VIEW_URI,
+        PRODUCT_CAROUSEL_URI,
+        MCP_APP_MIME_TYPE,
+        CSP_HEADER_VALUE,
+        create_call_tool_result,
+        register_mcp_apps_resources,
+        mount_mcp_apps_http,
+    )
+except ImportError:
+    from mcp_apps import (
+        CART_VIEW_URI,
+        PRODUCT_CAROUSEL_URI,
+        MCP_APP_MIME_TYPE,
+        CSP_HEADER_VALUE,
+        create_call_tool_result,
+        register_mcp_apps_resources,
+        mount_mcp_apps_http,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Logging Configuration
@@ -147,8 +170,9 @@ mcp = FastMCP(
 @mcp.tool(
     name="search_catalog",
     description="Search products in the catalog by keyword query and optional category filter.",
+    meta={"ui": {"resourceUri": PRODUCT_CAROUSEL_URI}},
 )
-def search_catalog(query: str, category: Optional[str] = None) -> List[Dict[str, Any]]:
+def search_catalog(query: str, category: Optional[str] = None) -> types.CallToolResult:
     """Search catalog records. Returns structured product records: SKU, title, price, stock, ratings."""
     logger.info(f"Executing search_catalog: query={query!r}, category={category!r}")
     q_norm = query.strip().lower()
@@ -172,54 +196,90 @@ def search_catalog(query: str, category: Optional[str] = None) -> List[Dict[str,
                 "category": item["category"],
             })
 
-    return results
+    # Progressive enhancement natural language voice summary
+    if results:
+        items_preview = ", ".join([f"{item['title']} (${item['price']:.2f})" for item in results[:3]])
+        voice_summary = f"Found {len(results)} matching product{'s' if len(results) > 1 else ''}: {items_preview}."
+    else:
+        voice_summary = f"No products found matching query '{query}'."
+
+    return create_call_tool_result(
+        structured_data=results,
+        resource_uri=PRODUCT_CAROUSEL_URI,
+        text_summary=voice_summary,
+    )
 
 
 @mcp.tool(
     name="manage_cart",
     description="Manage user shopping cart state: add, update, or remove items by SKU.",
+    meta={"ui": {"resourceUri": CART_VIEW_URI}},
 )
-def manage_cart(action: str, sku: str, quantity: int, user_token: str) -> Dict[str, Any]:
+def manage_cart(action: str, sku: str, quantity: int, user_token: str) -> types.CallToolResult:
     """Manages cart state (add/remove/update) with structured returns."""
     logger.info(f"Executing manage_cart: action={action}, sku={sku}, quantity={quantity}, user={user_token}")
     action_norm = action.strip().lower()
     if action_norm not in ("add", "remove", "update"):
-        return {
+        err_payload = {
             "success": False,
             "error": f"Invalid action: {action!r}. Supported actions are: 'add', 'remove', 'update'.",
             "user_token": user_token,
             "cart": {"items": [], "total_items": 0, "total_price": 0.0},
         }
+        return create_call_tool_result(
+            structured_data=err_payload,
+            resource_uri=CART_VIEW_URI,
+            text_summary=f"Cart update failed: Invalid action {action!r}.",
+            is_error=False,
+        )
 
     if not user_token or not user_token.strip():
-        return {
+        err_payload = {
             "success": False,
             "error": "user_token cannot be empty.",
             "user_token": "",
             "cart": {"items": [], "total_items": 0, "total_price": 0.0},
         }
+        return create_call_tool_result(
+            structured_data=err_payload,
+            resource_uri=CART_VIEW_URI,
+            text_summary="Cart update failed: user_token cannot be empty.",
+            is_error=False,
+        )
 
     # Verify SKU exists in catalog
     sku_normalized = sku.strip().upper()
     catalog_item = next((item for item in CATALOG_DATA if item["sku"].upper() == sku_normalized), None)
     if not catalog_item and action_norm != "remove":
-        return {
+        err_payload = {
             "success": False,
             "error": f"Product with SKU '{sku}' not found in catalog.",
             "user_token": user_token,
             "cart": _compute_cart_summary(user_token),
         }
+        return create_call_tool_result(
+            structured_data=err_payload,
+            resource_uri=CART_VIEW_URI,
+            text_summary=f"Cart update failed: Product SKU '{sku}' not found in catalog.",
+            is_error=False,
+        )
 
     user_cart = CART_STORE.setdefault(user_token, {})
 
     if action_norm == "add":
         if quantity <= 0:
-            return {
+            err_payload = {
                 "success": False,
                 "error": "Quantity to add must be greater than 0.",
                 "user_token": user_token,
                 "cart": _compute_cart_summary(user_token),
             }
+            return create_call_tool_result(
+                structured_data=err_payload,
+                resource_uri=CART_VIEW_URI,
+                text_summary="Cart update failed: Quantity must be greater than 0.",
+                is_error=False,
+            )
         current_qty = user_cart.get(sku_normalized, 0)
         user_cart[sku_normalized] = current_qty + quantity
 
@@ -234,13 +294,23 @@ def manage_cart(action: str, sku: str, quantity: int, user_token: str) -> Dict[s
         user_cart.pop(sku_normalized, None)
 
     summary = _compute_cart_summary(user_token)
-    return {
+    success_payload = {
         "success": True,
         "action": action_norm,
         "user_token": user_token,
         "cart": summary,
         "message": f"Successfully performed '{action_norm}' for SKU {sku_normalized}."
     }
+    voice_summary = (
+        f"Cart updated: {action_norm.title()} {sku_normalized}. "
+        f"You now have {summary['total_items']} items in your cart totaling ${summary['total_price']:.2f}."
+    )
+    return create_call_tool_result(
+        structured_data=success_payload,
+        resource_uri=CART_VIEW_URI,
+        text_summary=voice_summary,
+        is_error=False,
+    )
 
 
 def _compute_cart_summary(user_token: str) -> Dict[str, Any]:
@@ -403,6 +473,11 @@ def checkout_assistant() -> str:
         "6. Provide crisp, clear guidance when looking up order status or return policies."
     )
 
+
+# ---------------------------------------------------------------------------
+# MCP Apps UI Resource Registration (@modelcontextprotocol/ext-apps)
+# ---------------------------------------------------------------------------
+register_mcp_apps_resources(mcp)
 
 # ---------------------------------------------------------------------------
 # Streamable HTTP MCP Application Creation
@@ -587,8 +662,12 @@ class MCPWireProtocolMiddleware(BaseHTTPMiddleware):
             if origin:
                 response.headers["Access-Control-Allow-Origin"] = origin
 
+            # Content-Security-Policy header for UI resources
+            if body_name and ("ui://" in str(body_name) or "cart-view" in str(body_name) or "product-carousel" in str(body_name)):
+                response.headers["Content-Security-Policy"] = CSP_HEADER_VALUE
+
             response.headers["Access-Control-Expose-Headers"] = (
-                "MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id"
+                "MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id, Content-Security-Policy"
             )
             return response
 
@@ -600,10 +679,11 @@ class MCPWireProtocolMiddleware(BaseHTTPMiddleware):
 
 
 # ---------------------------------------------------------------------------
-# Construct Parent Application with Preserved Lifespan
+# Construct Parent Application with Preserved Lifespan & MCP Apps Mounted
 # ---------------------------------------------------------------------------
 app = Starlette(lifespan=mcp_sub_app.lifespan)
 app.add_middleware(MCPWireProtocolMiddleware, allowed_origins=ALLOWED_ORIGINS)
+mount_mcp_apps_http(app)
 app.mount("", mcp_sub_app)
 
 # ---------------------------------------------------------------------------

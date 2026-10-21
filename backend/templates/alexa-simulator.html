@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EchoCart Nexus - Alexa+ Smart Display Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-chassis: #05080E;
+      --bg-bezel: #0F172A;
+      --bg-display: #070B11;
+      --cyan-alexa: #00CAFF;
+      --cyan-glow: rgba(0, 202, 255, 0.4);
+      --emerald: #10B981;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --text-muted: #64748B;
+      --font-sans: 'Outfit', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--bg-chassis);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+      gap: 20px;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(0, 202, 255, 0.1) 0%, transparent 60%);
+    }
+
+    /* Top Control Ribbon */
+    .simulator-topbar {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 12px 20px;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+    }
+
+    .sim-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+
+    .sim-brand span {
+      color: var(--cyan-alexa);
+    }
+
+    .view-switcher {
+      display: flex;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      border-radius: 9999px;
+      border: 1px solid var(--border-subtle);
+      gap: 4px;
+    }
+
+    .switch-btn {
+      padding: 6px 16px;
+      border-radius: 9999px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .switch-btn.active {
+      background: var(--cyan-alexa);
+      color: #050B14;
+      box-shadow: 0 0 14px var(--cyan-glow);
+    }
+
+    /* Device Bezel: Simulated Echo Show 10 / 15 Smart Display */
+    .device-bezel {
+      width: 100%;
+      max-width: 880px;
+      background: var(--bg-bezel);
+      border: 12px solid #1E293B;
+      border-radius: 28px;
+      box-shadow: 
+        0 24px 60px rgba(0, 0, 0, 0.8),
+        0 0 0 1px rgba(255, 255, 255, 0.08),
+        0 0 40px -10px var(--cyan-glow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Smart Display Status Bar */
+    .device-status-bar {
+      height: 36px;
+      background: rgba(0, 0, 0, 0.5);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .status-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .alexa-light-strip {
+      height: 3px;
+      width: 100%;
+      background: linear-gradient(90deg, transparent 0%, var(--cyan-alexa) 50%, transparent 100%);
+      box-shadow: 0 0 12px var(--cyan-alexa);
+      opacity: 0.8;
+      animation: sweepLight 4s infinite ease-in-out;
+    }
+
+    @keyframes sweepLight {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+
+    /* Sandboxed Iframe Container */
+    .iframe-stage {
+      width: 100%;
+      height: 640px;
+      background: var(--bg-display);
+      position: relative;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* Host Event Log & Console */
+    .host-console {
+      width: 100%;
+      max-width: 880px;
+      background: #090D15;
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .console-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text-secondary);
+      font-weight: 600;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 8px;
+    }
+
+    .console-logs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .log-row {
+      display: flex;
+      gap: 8px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.02);
+      line-height: 1.4;
+    }
+
+    .log-tag-host { color: var(--emerald); font-weight: 600; }
+    .log-tag-guest { color: var(--cyan-alexa); font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Ribbon with View Switcher -->
+  <header class="simulator-topbar">
+    <div class="sim-brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00CAFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      EchoCart <span>Alexa+ Smart Display</span>
+    </div>
+
+    <div class="view-switcher" role="tablist">
+      <button class="switch-btn active" id="btnTabCart" role="tab" aria-selected="true" data-uri="/mcp-apps/cart-view.html">
+        Shopping Cart View
+      </button>
+      <button class="switch-btn" id="btnTabCarousel" role="tab" aria-selected="false" data-uri="/mcp-apps/product-carousel.html">
+        Product Catalog Slider
+      </button>
+    </div>
+  </header>
+
+  <!-- Simulated Hardware Bezel -->
+  <div class="device-bezel">
+    <!-- Alexa Top Cyan Light Strip -->
+    <div class="alexa-light-strip" aria-hidden="true"></div>
+
+    <!-- Status Bar -->
+    <div class="device-status-bar">
+      <div class="status-left">
+        <span id="currentTime">12:00 PM</span>
+        <span>•</span>
+        <span>Echo Show 15</span>
+      </div>
+      <div class="status-right">
+        <span>Wi-Fi 6</span>
+        <span>Alexa+ Active</span>
+      </div>
+    </div>
+
+    <!-- Sandboxed Iframe Stage -->
+    <div class="iframe-stage">
+      <iframe 
+        id="appIframe"
+        src="/mcp-apps/cart-view.html"
+        sandbox="allow-scripts allow-forms allow-same-origin"
+        title="Sandboxed MCP App View"
+      ></iframe>
+    </div>
+  </div>
+
+  <!-- Host Bridge Logger Console -->
+  <div class="host-console">
+    <div class="console-header">
+      <span>Host PostMessage Bridge Controller</span>
+      <span style="color:var(--cyan-alexa);">Protocol: 2025-11-25</span>
+    </div>
+    <div class="console-logs" id="consoleLogs">
+      <div class="log-row">
+        <span class="log-tag-host">[HOST]</span>
+        <span>Simulator ready. Listening for guest ui/initialize...</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const iframe = document.getElementById("appIframe");
+    const consoleLogs = document.getElementById("consoleLogs");
+    const btnTabCart = document.getElementById("btnTabCart");
+    const btnTabCarousel = document.getElementById("btnTabCarousel");
+    const currentTimeEl = document.getElementById("currentTime");
+
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      currentTimeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    function logHost(tag, message) {
+      const row = document.createElement("div");
+      row.className = "log-row";
+      const tagClass = tag === "HOST" ? "log-tag-host" : "log-tag-guest";
+      row.innerHTML = `<span class="${tagClass}">[${tag}]</span> <span>${message}</span>`;
+      consoleLogs.prepend(row);
+    }
+
+    // Switch Views
+    btnTabCart.addEventListener("click", () => {
+      btnTabCart.classList.add("active");
+      btnTabCarousel.classList.remove("active");
+      iframe.src = btnTabCart.dataset.uri;
+      logHost("HOST", "Switched view to Cart Card: " + btnTabCart.dataset.uri);
+    });
+
+    btnTabCarousel.addEventListener("click", () => {
+      btnTabCarousel.classList.add("active");
+      btnTabCart.classList.remove("active");
+      iframe.src = btnTabCarousel.dataset.uri;
+      logHost("HOST", "Switched view to Product Carousel: " + btnTabCarousel.dataset.uri);
+    });
+
+    // Bidirectional PostMessage Bridge Host Listener
+    window.addEventListener("message", async (event) => {
+      const data = event.data;
+      if (!data || typeof data !== "object" || data.jsonrpc !== "2.0") return;
+
+      logHost("GUEST", `Method: ${data.method || 'result'} | Payload: ${JSON.stringify(data).slice(0, 90)}...`);
+
+      // 1. Handle Handshake ui/initialize from Guest
+      if (data.method === "ui/initialize") {
+        logHost("HOST", "Handshake accepted. Emitting ui/initialize response + initial tool result...");
+
+        // Respond to initialize
+        iframe.contentWindow.postMessage({
+          jsonrpc: "2.0",
+          id: data.id,
+          result: {
+            protocolVersion: "2025-11-25",
+            hostInfo: { name: "EchoCart-Alexa-Host", version: "2.0.0" }
+          }
+        }, "*");
+
+        // Send initial tool result depending on view
+        if (iframe.src.includes("cart-view")) {
+          const cartResult = {
+            jsonrpc: "2.0",
+            method: "ui/tool-result",
+            params: {
+              success: true,
+              action: "get",
+              user_token: "usr_token_alpha",
+              cart: {
+                items: [
+                  {
+                    sku: "ECHO-PRO-01",
+                    title: "EchoCart Nexus Pro Active Noise-Cancelling Headphones",
+                    quantity: 1,
+                    unit_price: 249.99,
+                    subtotal: 249.99
+                  },
+                  {
+                    sku: "ECHO-PWR-05",
+                    title: "EchoCart MagCharge 65W Wireless Multi-Device Pad",
+                    quantity: 2,
+                    unit_price: 59.99,
+                    subtotal: 119.98
+                  }
+                ],
+                total_items: 3,
+                total_price: 369.97
+              }
+            }
+          };
+          iframe.contentWindow.postMessage(cartResult, "*");
+        }
+      }
+
+      // 2. Handle tools/call from Guest (e.g. manage_cart)
+      if (data.method === "tools/call") {
+        logHost("HOST", `Tool execution requested: ${data.params.name}(${JSON.stringify(data.params.arguments)})`);
+        
+        try {
+          // Execute against backend MCP server
+          const response = await fetch("/mcp", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "MCP-Protocol-Version": "2025-11-25",
+              "Mcp-Method": "tools/call",
+              "Mcp-Name": data.params.name
+            },
+            body: JSON.stringify(data)
+          });
+
+          const rawText = await response.text();
+          let parsedRpc = null;
+
+          // Parse SSE or JSON
+          for (const line of rawText.split("\n")) {
+            if (line.startsWith("data:")) {
+              parsedRpc = JSON.parse(line.slice(5).trim());
+              break;
+            }
+          }
+          if (!parsedRpc) parsedRpc = JSON.parse(rawText);
+
+          logHost("HOST", `Server executed ${data.params.name}. Pushing result back to guest iframe...`);
+
+          // Deliver result back to iframe
+          iframe.contentWindow.postMessage(parsedRpc, "*");
+
+          // Also deliver as ui/tool-result notification
+          if (parsedRpc.result && parsedRpc.result.content && parsedRpc.result.content[0]) {
+            const innerPayload = JSON.parse(parsedRpc.result.content[0].text);
+            iframe.contentWindow.postMessage({
+              jsonrpc: "2.0",
+              method: "ui/tool-result",
+              params: innerPayload
+            }, "*");
+          }
+        } catch (err) {
+          logHost("HOST", `Error executing tool: ${err.message}`);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
